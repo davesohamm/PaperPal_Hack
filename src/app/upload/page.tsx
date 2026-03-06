@@ -27,6 +27,19 @@ interface UploadedFile {
   preview?: string;
 }
 
+interface ParsedDocument {
+  text: string;
+  sections: {
+    title: string;
+    abstract: string;
+    body: string[];
+    references: string;
+  };
+  fileName: string;
+  fileSize: number;
+  isTeX: boolean;
+}
+
 export default function UploadPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -35,6 +48,8 @@ export default function UploadPage() {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(preselectedFormat ? 2 : 1);
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
 
@@ -87,10 +102,30 @@ export default function UploadPage() {
     [addFiles]
   );
 
-  const handleConvert = () => {
-    router.push(
-      `/editor?format=${selectedFormat}&files=${files.map((f) => f.file.name).join(",")}`
-    );
+  const handleConvert = async () => {
+    const docFile = files.find((f) => f.type === "document");
+    if (!docFile) return;
+
+    setIsParsing(true);
+    setParseError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", docFile.file);
+
+      const res = await fetch("/api/parse", { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to parse document");
+      }
+
+      const parsed: ParsedDocument = await res.json();
+      sessionStorage.setItem("paperpal_parsed", JSON.stringify(parsed));
+      router.push(`/editor?format=${selectedFormat}`);
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : "Failed to parse document");
+      setIsParsing(false);
+    }
   };
 
   return (
@@ -447,22 +482,46 @@ export default function UploadPage() {
                       <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
                       <div>
                         <p className="text-sm font-medium text-emerald-800">
-                          All processing happens locally
+                          AI-powered conversion
                         </p>
                         <p className="text-xs text-emerald-600 mt-0.5">
-                          Your paper will not be sent to any external server.
+                          Your paper is processed by our AI pipeline and formatted into LaTeX.
                         </p>
                       </div>
                     </div>
                   </div>
 
+                  {parseError && (
+                    <div className="mt-4 flex items-start gap-3 rounded-xl bg-red-50 border border-red-100 p-4">
+                      <AlertCircle className="h-4 w-4 text-red-600 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-sm font-medium text-red-800">Parsing failed</p>
+                        <p className="text-xs text-red-600 mt-0.5">{parseError}</p>
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     onClick={handleConvert}
-                    className="group mt-8 w-full flex items-center justify-center gap-3 rounded-full bg-ink-900 py-4 text-sm font-semibold text-white transition-all hover:bg-ink-800 hover:shadow-2xl hover:shadow-ink-900/25 active:scale-[0.98]"
+                    disabled={isParsing}
+                    className={`group mt-8 w-full flex items-center justify-center gap-3 rounded-full py-4 text-sm font-semibold text-white transition-all active:scale-[0.98] ${
+                      isParsing
+                        ? "bg-ink-600 cursor-wait"
+                        : "bg-ink-900 hover:bg-ink-800 hover:shadow-2xl hover:shadow-ink-900/25"
+                    }`}
                   >
-                    <Sparkles className="h-4 w-4" />
-                    Start Conversion
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                    {isParsing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Parsing document...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        Start Conversion
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                      </>
+                    )}
                   </button>
                 </div>
 

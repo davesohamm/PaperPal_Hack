@@ -1,171 +1,188 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText,
   Download,
-  ChevronDown,
   Eye,
+  EyeOff,
   Code,
   Columns2,
   ZoomIn,
   ZoomOut,
   RotateCcw,
   Sparkles,
-  Loader2,
   CheckCircle2,
   Lock,
   ArrowLeft,
   Copy,
   Check,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Settings,
+  AlertCircle,
+  Cpu,
+  Mail,
+  ArrowRight,
+  Loader2,
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { FORMAT_OPTIONS } from "@/lib/constants";
 
-const SAMPLE_TEX = `\\documentclass[conference]{IEEEtran}
-\\usepackage{amsmath,amssymb,amsfonts}
-\\usepackage{graphicx}
-\\usepackage{textcomp}
-
-\\begin{document}
-
-\\title{Attention-Based Neural Architecture for\\\\
-Multi-Modal Document Understanding}
-
-\\author{
-  \\IEEEauthorblockN{Jane Smith}
-  \\IEEEauthorblockA{Department of Computer Science\\\\
-  Stanford University\\\\
-  Stanford, CA 94305\\\\
-  jane.smith@stanford.edu}
-  \\and
-  \\IEEEauthorblockN{John Doe}
-  \\IEEEauthorblockA{Research Lab\\\\
-  Google DeepMind\\\\
-  Mountain View, CA\\\\
-  john.doe@deepmind.com}
+interface ConversionStatus {
+  message: string;
+  progress: number;
+  step: string;
+  chunkIndex?: number;
+  model?: string;
 }
 
-\\maketitle
-
-\\begin{abstract}
-We present a novel attention-based architecture for 
-multi-modal document understanding that achieves 
-state-of-the-art results on three benchmark datasets.
-Our approach combines visual features from document
-images with textual features using a cross-attention
-mechanism, enabling the model to jointly reason about
-layout and content. Experiments demonstrate a 4.2\\%
-improvement over previous methods on DocVQA.
-\\end{abstract}
-
-\\begin{IEEEkeywords}
-document understanding, attention mechanism, 
-multi-modal learning, neural networks
-\\end{IEEEkeywords}
-
-\\section{Introduction}
-
-Document understanding is a fundamental task in 
-natural language processing that requires models
-to comprehend both textual content and visual
-layout information \\cite{smith2024}. Recent advances
-in transformer architectures have shown promise,
-but challenges remain in handling diverse document
-formats and complex layouts.
-
-\\section{Methodology}
-
-\\subsection{Cross-Attention Mechanism}
-
-Our model employs a cross-attention layer that
-enables information flow between visual and 
-textual representations:
-
-\\begin{equation}
-  \\text{Attn}(Q, K, V) = 
-  \\text{softmax}\\left(
-    \\frac{QK^T}{\\sqrt{d_k}}
-  \\right)V
-\\end{equation}
-
-where $Q$ represents query vectors from the text
-encoder, and $K$, $V$ are derived from the visual
-feature extractor.
-
-\\section{Results}
-
-Our method achieves the following performance on
-standard benchmarks:
-
-\\begin{table}[h]
-\\centering
-\\caption{Performance Comparison}
-\\begin{tabular}{lcc}
-\\hline
-Method & DocVQA & InfographicsVQA \\\\
-\\hline
-Baseline & 78.3 & 42.1 \\\\
-LayoutLM & 82.1 & 45.6 \\\\
-\\textbf{Ours} & \\textbf{86.3} & \\textbf{49.8} \\\\
-\\hline
-\\end{tabular}
-\\end{table}
-
-\\section{Conclusion}
-
-We introduced a cross-attention architecture for
-multi-modal document understanding. Future work
-will explore scaling to longer documents and
-additional modalities.
-
-\\bibliographystyle{IEEEtran}
-\\bibliography{refs}
-
-\\end{document}`;
+interface ParsedDocument {
+  text: string;
+  sections: {
+    title: string;
+    abstract: string;
+    body: string[];
+    references: string;
+  };
+  fileName: string;
+  fileSize: number;
+  isTeX: boolean;
+}
 
 export default function EditorPage() {
   const searchParams = useSearchParams();
   const formatId = searchParams.get("format") || "ieee";
-  const format = FORMAT_OPTIONS.find((f) => f.id === formatId) || FORMAT_OPTIONS[5];
+  const format =
+    FORMAT_OPTIONS.find((f) => f.id === formatId) || FORMAT_OPTIONS[5];
 
-  const [viewMode, setViewMode] = useState<"split" | "code" | "preview">("split");
+  const [viewMode, setViewMode] = useState<"split" | "code" | "preview">(
+    "split"
+  );
   const [zoom, setZoom] = useState(100);
   const [isConverting, setIsConverting] = useState(true);
+  const [conversionStatus, setConversionStatus] =
+    useState<ConversionStatus | null>(null);
   const [conversionProgress, setConversionProgress] = useState(0);
   const [texCode, setTexCode] = useState("");
-  const [showDownloadAuth, setShowDownloadAuth] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [conversionError, setConversionError] = useState<string | null>(null);
+  const [activeModel, setActiveModel] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
+
   useEffect(() => {
-    const steps = [
-      { progress: 15, delay: 400 },
-      { progress: 35, delay: 900 },
-      { progress: 55, delay: 1500 },
-      { progress: 75, delay: 2200 },
-      { progress: 90, delay: 2800 },
-      { progress: 100, delay: 3500 },
-    ];
-
-    steps.forEach(({ progress, delay }) => {
-      setTimeout(() => setConversionProgress(progress), delay);
-    });
-
-    const timer = setTimeout(() => {
-      setIsConverting(false);
-      setTexCode(SAMPLE_TEX);
-    }, 4000);
-
-    return () => clearTimeout(timer);
+    const saved = sessionStorage.getItem("paperpal_auth");
+    if (saved) setIsLoggedIn(true);
   }, []);
+
+  useEffect(() => {
+    const raw = sessionStorage.getItem("paperpal_parsed");
+    if (!raw) {
+      setIsConverting(false);
+      setConversionError(
+        "No document data found. Please go back and upload a file."
+      );
+      return;
+    }
+
+    const parsed: ParsedDocument = JSON.parse(raw);
+
+    if (parsed.isTeX) {
+      setTexCode(parsed.text);
+      setIsConverting(false);
+      setConversionProgress(100);
+      return;
+    }
+
+    startConversion(parsed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const startConversion = async (parsed: ParsedDocument) => {
+    setIsConverting(true);
+    setConversionProgress(0);
+    setConversionError(null);
+
+    try {
+      const res = await fetch("/api/convert", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: parsed.text,
+          sections: parsed.sections,
+          formatId,
+          isTeX: parsed.isTeX,
+        }),
+      });
+
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response stream");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        let currentEvent = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith("data: ")) {
+            const data = JSON.parse(line.slice(6));
+            handleSSEEvent(currentEvent, data);
+          }
+        }
+      }
+    } catch (err) {
+      setConversionError(
+        err instanceof Error ? err.message : "Conversion failed"
+      );
+      setIsConverting(false);
+    }
+  };
+
+  const handleSSEEvent = useCallback(
+    (event: string, data: Record<string, unknown>) => {
+      switch (event) {
+        case "status":
+          setConversionStatus(data as unknown as ConversionStatus);
+          setConversionProgress(data.progress as number);
+          break;
+        case "chunk":
+          setConversionProgress(data.progress as number);
+          if (data.model) setActiveModel(data.model as string);
+          break;
+        case "complete":
+          setTexCode(data.latex as string);
+          setConversionProgress(100);
+          setIsConverting(false);
+          setConversionStatus(null);
+          break;
+        case "error":
+          setConversionError(data.message as string);
+          setIsConverting(false);
+          break;
+      }
+    },
+    []
+  );
 
   const handleCopy = () => {
     navigator.clipboard.writeText(texCode);
@@ -174,7 +191,60 @@ export default function EditorPage() {
   };
 
   const handleDownload = () => {
-    setShowDownloadAuth(true);
+    if (!isLoggedIn) {
+      setShowAuthModal(true);
+      return;
+    }
+    downloadPDF();
+  };
+
+  const downloadPDF = () => {
+    if (!texCode) return;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const parsed = parseTeXForPreview(texCode);
+    const htmlContent = buildPrintableHTML(parsed, format.name);
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+
+    printWindow.onload = () => {
+      setTimeout(() => {
+        printWindow.print();
+      }, 500);
+    };
+  };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authEmail, password: authPassword }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        sessionStorage.setItem("paperpal_auth", JSON.stringify(data.user));
+        setIsLoggedIn(true);
+        setShowAuthModal(false);
+        setAuthEmail("");
+        setAuthPassword("");
+        downloadPDF();
+      } else {
+        setAuthError(data.error || "Invalid credentials");
+      }
+    } catch {
+      setAuthError("Connection failed. Please try again.");
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   return (
@@ -212,16 +282,25 @@ export default function EditorPage() {
 
             <div className="h-4 w-px bg-paper-200" />
 
-            {!isConverting && (
+            {!isConverting && !conversionError && texCode && (
               <span className="flex items-center gap-1.5 text-xs text-emerald-600">
                 <CheckCircle2 className="h-3 w-3" />
                 Converted
               </span>
             )}
+
+            {activeModel && !isConverting && (
+              <>
+                <div className="h-4 w-px bg-paper-200" />
+                <span className="flex items-center gap-1.5 text-xs text-ink-400">
+                  <Cpu className="h-3 w-3" />
+                  {activeModel}
+                </span>
+              </>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
-            {/* View Mode Toggle */}
             <div className="flex rounded-lg bg-paper-100 p-0.5">
               {[
                 { mode: "code" as const, icon: <Code className="h-3.5 w-3.5" />, label: "Code" },
@@ -245,7 +324,6 @@ export default function EditorPage() {
 
             <div className="h-4 w-px bg-paper-200" />
 
-            {/* Zoom */}
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setZoom(Math.max(50, zoom - 10))}
@@ -268,10 +346,11 @@ export default function EditorPage() {
 
             <button
               onClick={handleDownload}
-              className="group flex items-center gap-2 rounded-full bg-ink-900 px-4 py-2 text-xs font-medium text-white transition-all hover:bg-ink-800 hover:shadow-lg active:scale-[0.97]"
+              disabled={!texCode}
+              className="group flex items-center gap-2 rounded-full bg-ink-900 px-4 py-2 text-xs font-medium text-white transition-all hover:bg-ink-800 hover:shadow-lg active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download className="h-3.5 w-3.5" />
-              Download
+              Download PDF
             </button>
           </div>
         </div>
@@ -279,7 +358,6 @@ export default function EditorPage() {
 
       {/* Main Editor Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Converting Overlay */}
         <AnimatePresence>
           {isConverting && (
             <motion.div
@@ -292,7 +370,7 @@ export default function EditorPage() {
                 initial={{ scale: 0.9, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 exit={{ scale: 0.9, opacity: 0 }}
-                className="flex flex-col items-center gap-6 rounded-3xl border border-paper-200/60 bg-white p-12 shadow-xl"
+                className="flex flex-col items-center gap-6 rounded-3xl border border-paper-200/60 bg-white p-12 shadow-xl max-w-md w-full mx-4"
               >
                 <div className="relative">
                   <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10">
@@ -309,8 +387,15 @@ export default function EditorPage() {
                     Converting your paper
                   </h3>
                   <p className="text-sm text-ink-400">
-                    AI is reformatting to {format.name} style...
+                    {conversionStatus?.message ||
+                      `AI is reformatting to ${format.name} style...`}
                   </p>
+                  {activeModel && (
+                    <p className="text-xs text-ink-300 mt-2 flex items-center justify-center gap-1.5">
+                      <Cpu className="h-3 w-3" />
+                      Using {activeModel}
+                    </p>
+                  )}
                 </div>
                 <div className="w-64">
                   <div className="flex justify-between mb-2">
@@ -333,6 +418,40 @@ export default function EditorPage() {
           )}
         </AnimatePresence>
 
+        <AnimatePresence>
+          {conversionError && !isConverting && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-30 flex items-center justify-center bg-paper-50/90 backdrop-blur-sm mt-[105px]"
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                className="flex flex-col items-center gap-6 rounded-3xl border border-red-200/60 bg-white p-12 shadow-xl max-w-md w-full mx-4"
+              >
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-50">
+                  <AlertCircle className="h-7 w-7 text-red-500" />
+                </div>
+                <div className="text-center">
+                  <h3 className="font-display text-xl text-ink-900 mb-2">
+                    Conversion failed
+                  </h3>
+                  <p className="text-sm text-ink-400">{conversionError}</p>
+                </div>
+                <Link
+                  href="/upload"
+                  className="flex items-center gap-2 rounded-full bg-ink-900 px-6 py-3 text-sm font-medium text-white transition-all hover:bg-ink-800"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Try again
+                </Link>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Code Panel */}
         {(viewMode === "code" || viewMode === "split") && (
           <div
@@ -349,7 +468,8 @@ export default function EditorPage() {
               </div>
               <button
                 onClick={handleCopy}
-                className="flex items-center gap-1.5 text-xs text-ink-400 hover:text-ink-600 transition-colors"
+                disabled={!texCode}
+                className="flex items-center gap-1.5 text-xs text-ink-400 hover:text-ink-600 transition-colors disabled:opacity-50"
               >
                 {copied ? (
                   <>
@@ -366,9 +486,8 @@ export default function EditorPage() {
             </div>
             <div className="flex-1 overflow-auto custom-scroll">
               <div className="flex">
-                {/* Line numbers */}
                 <div className="flex-shrink-0 py-4 px-3 text-right select-none border-r border-paper-100">
-                  {texCode.split("\n").map((_, i) => (
+                  {(texCode || "\n").split("\n").map((_, i) => (
                     <div
                       key={i}
                       className="text-[11px] leading-[1.7] font-mono text-ink-300"
@@ -384,13 +503,18 @@ export default function EditorPage() {
                   spellCheck={false}
                   className="flex-1 resize-none border-0 bg-transparent p-4 font-mono text-[12px] leading-[1.7] text-ink-700 outline-none"
                   style={{ minHeight: "100%", tabSize: 2 }}
+                  placeholder={
+                    isConverting
+                      ? "Generating LaTeX..."
+                      : "No LaTeX code generated yet"
+                  }
                 />
               </div>
             </div>
           </div>
         )}
 
-        {/* PDF Preview Panel */}
+        {/* Preview Panel */}
         {(viewMode === "preview" || viewMode === "split") && (
           <div
             className={`flex flex-col bg-ink-100 ${
@@ -412,188 +536,33 @@ export default function EditorPage() {
                 Reset zoom
               </button>
             </div>
-            <div className="flex-1 overflow-auto custom-scroll p-8 flex justify-center">
+            <div className="flex-1 overflow-auto custom-scroll p-8 flex justify-center items-start">
               <div
-                className="bg-white rounded-sm shadow-2xl shadow-ink-900/10 transition-transform origin-top"
+                className="bg-white rounded-sm shadow-2xl shadow-ink-900/10 transition-transform origin-top flex-shrink-0"
                 style={{
                   transform: `scale(${zoom / 100})`,
                   width: "8.5in",
                   minHeight: "11in",
-                  padding: "1in",
+                  padding: "0.75in 0.85in",
+                  marginBottom: "2rem",
                 }}
               >
-                {/* Simulated PDF Render */}
-                <div className="space-y-6" style={{ fontFamily: "Times New Roman, serif" }}>
-                  <div className="text-center space-y-4">
-                    <h1 className="text-[18px] font-bold leading-tight">
-                      Attention-Based Neural Architecture for
-                      <br />
-                      Multi-Modal Document Understanding
-                    </h1>
-                    <div className="flex justify-center gap-12 text-[10px]">
-                      <div className="text-center">
-                        <p className="font-semibold">Jane Smith</p>
-                        <p className="text-ink-500">
-                          Department of Computer Science
-                          <br />
-                          Stanford University
-                          <br />
-                          Stanford, CA 94305
-                          <br />
-                          jane.smith@stanford.edu
-                        </p>
-                      </div>
-                      <div className="text-center">
-                        <p className="font-semibold">John Doe</p>
-                        <p className="text-ink-500">
-                          Research Lab
-                          <br />
-                          Google DeepMind
-                          <br />
-                          Mountain View, CA
-                          <br />
-                          john.doe@deepmind.com
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <p className="text-[9px] font-bold italic mb-1">
-                      Abstract—
-                      <span className="font-normal">
-                        We present a novel attention-based architecture for
-                        multi-modal document understanding that achieves
-                        state-of-the-art results on three benchmark datasets. Our
-                        approach combines visual features from document images with
-                        textual features using a cross-attention mechanism, enabling
-                        the model to jointly reason about layout and content.
-                        Experiments demonstrate a 4.2% improvement over previous
-                        methods on DocVQA.
-                      </span>
-                    </p>
-                    <p className="text-[9px] mt-2">
-                      <span className="font-bold italic">Index Terms—</span>
-                      <span className="font-normal italic">
-                        document understanding, attention mechanism, multi-modal
-                        learning, neural networks
-                      </span>
-                    </p>
-                  </div>
-
-                  <div className="columns-2 gap-6 text-[9px] leading-relaxed space-y-4">
-                    <div>
-                      <h2 className="text-[10px] font-bold text-center mb-2">
-                        I. INTRODUCTION
-                      </h2>
-                      <p className="text-justify indent-4">
-                        Document understanding is a fundamental task in natural
-                        language processing that requires models to comprehend both
-                        textual content and visual layout information [1]. Recent
-                        advances in transformer architectures have shown promise, but
-                        challenges remain in handling diverse document formats and
-                        complex layouts.
-                      </p>
-                    </div>
-
-                    <div>
-                      <h2 className="text-[10px] font-bold text-center mb-2">
-                        II. METHODOLOGY
-                      </h2>
-                      <h3 className="text-[9px] font-bold italic mb-1">
-                        A. Cross-Attention Mechanism
-                      </h3>
-                      <p className="text-justify indent-4">
-                        Our model employs a cross-attention layer that enables
-                        information flow between visual and textual representations:
-                      </p>
-                      <div className="my-3 text-center text-[10px] font-serif italic">
-                        Attn(Q, K, V) = softmax(QK<sup>T</sup>/√d<sub>k</sub>)V
-                      </div>
-                      <p className="text-justify">
-                        where Q represents query vectors from the text encoder, and K,
-                        V are derived from the visual feature extractor.
-                      </p>
-                    </div>
-
-                    <div>
-                      <h2 className="text-[10px] font-bold text-center mb-2">
-                        III. RESULTS
-                      </h2>
-                      <p className="text-justify indent-4 mb-3">
-                        Our method achieves the following performance on standard
-                        benchmarks:
-                      </p>
-                      <div className="border border-ink-200 text-center mb-2">
-                        <p className="text-[8px] font-bold py-1 border-b border-ink-200">
-                          TABLE I: Performance Comparison
-                        </p>
-                        <table className="w-full text-[8px]">
-                          <thead>
-                            <tr className="border-b border-ink-200">
-                              <th className="py-1 px-2 text-left font-bold">
-                                Method
-                              </th>
-                              <th className="py-1 px-2 font-bold">DocVQA</th>
-                              <th className="py-1 px-2 font-bold">
-                                InfoVQA
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr className="border-b border-ink-100">
-                              <td className="py-1 px-2 text-left">
-                                Baseline
-                              </td>
-                              <td className="py-1 px-2">78.3</td>
-                              <td className="py-1 px-2">42.1</td>
-                            </tr>
-                            <tr className="border-b border-ink-100">
-                              <td className="py-1 px-2 text-left">
-                                LayoutLM
-                              </td>
-                              <td className="py-1 px-2">82.1</td>
-                              <td className="py-1 px-2">45.6</td>
-                            </tr>
-                            <tr>
-                              <td className="py-1 px-2 text-left font-bold">
-                                Ours
-                              </td>
-                              <td className="py-1 px-2 font-bold">86.3</td>
-                              <td className="py-1 px-2 font-bold">49.8</td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h2 className="text-[10px] font-bold text-center mb-2">
-                        IV. CONCLUSION
-                      </h2>
-                      <p className="text-justify indent-4">
-                        We introduced a cross-attention architecture for multi-modal
-                        document understanding. Future work will explore scaling to
-                        longer documents and additional modalities.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                <LaTeXPreview texCode={texCode} formatName={format.name} />
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Download Auth Modal */}
+      {/* Auth Modal */}
       <AnimatePresence>
-        {showDownloadAuth && (
+        {showAuthModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/40 backdrop-blur-sm p-4"
-            onClick={() => setShowDownloadAuth(false)}
+            onClick={() => setShowAuthModal(false)}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
@@ -602,34 +571,506 @@ export default function EditorPage() {
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-sm rounded-3xl bg-white p-8 shadow-2xl"
             >
-              <div className="flex flex-col items-center text-center">
+              <div className="flex flex-col items-center text-center mb-6">
                 <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10">
                   <Lock className="h-6 w-6 text-accent" />
                 </div>
-                <h3 className="font-display text-2xl text-ink-900 mb-2">
+                <h3 className="font-display text-2xl text-ink-900 mb-1">
                   Sign in to download
                 </h3>
-                <p className="text-sm text-ink-400 mb-6">
-                  Create a free account to download your converted paper as PDF
-                  and .tex files.
+                <p className="text-sm text-ink-400">
+                  Log in to download your paper as a PDF.
                 </p>
-                <Link
-                  href="/auth"
-                  className="w-full flex items-center justify-center gap-2 rounded-full bg-ink-900 py-3.5 text-sm font-semibold text-white transition-all hover:bg-ink-800 active:scale-[0.97]"
-                >
-                  Sign in or Create Account
-                </Link>
-                <button
-                  onClick={() => setShowDownloadAuth(false)}
-                  className="mt-3 text-xs text-ink-400 hover:text-ink-600 transition-colors"
-                >
-                  Maybe later
-                </button>
               </div>
+
+              <div className="flex rounded-xl bg-paper-100 p-1 mb-5">
+                {(["signin", "signup"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      setAuthMode(m);
+                      setAuthError(null);
+                    }}
+                    className={`flex-1 rounded-lg py-2 text-xs font-medium transition-all ${
+                      authMode === m
+                        ? "bg-white text-ink-900 shadow-sm"
+                        : "text-ink-400 hover:text-ink-600"
+                    }`}
+                  >
+                    {m === "signin" ? "Sign In" : "Sign Up"}
+                  </button>
+                ))}
+              </div>
+
+              <form onSubmit={handleAuth} className="space-y-3">
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-300" />
+                  <input
+                    type="email"
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="Email address"
+                    required
+                    className="w-full rounded-xl border border-paper-200 bg-white py-3 pl-10 pr-4 text-sm text-ink-800 placeholder:text-ink-300 outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10"
+                  />
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-300" />
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="Password"
+                    required
+                    className="w-full rounded-xl border border-paper-200 bg-white py-3 pl-10 pr-10 text-sm text-ink-800 placeholder:text-ink-300 outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-ink-300 hover:text-ink-500"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+
+                {authError && (
+                  <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-100 px-3 py-2">
+                    <AlertCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                    <p className="text-xs text-red-600">{authError}</p>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={authLoading}
+                  className="w-full flex items-center justify-center gap-2 rounded-full bg-ink-900 py-3.5 text-sm font-semibold text-white transition-all hover:bg-ink-800 active:scale-[0.97] disabled:opacity-60"
+                >
+                  {authLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <>
+                      {authMode === "signin" ? "Sign In" : "Create Account"}
+                      <ArrowRight className="h-4 w-4" />
+                    </>
+                  )}
+                </button>
+              </form>
+
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="mt-4 w-full text-center text-xs text-ink-400 hover:text-ink-600 transition-colors"
+              >
+                Maybe later
+              </button>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
     </main>
   );
+}
+
+/* ─── Preview Rendering ─── */
+
+function LaTeXPreview({
+  texCode,
+  formatName,
+}: {
+  texCode: string;
+  formatName: string;
+}) {
+  if (!texCode) {
+    return (
+      <div className="flex items-center justify-center h-full text-ink-300 text-sm">
+        Preview will appear once conversion is complete
+      </div>
+    );
+  }
+
+  const parsed = parseTeXForPreview(texCode);
+  const isIEEE = formatName === "IEEE";
+
+  return (
+    <div style={{ fontFamily: "'Times New Roman', 'CMU Serif', Georgia, serif", fontSize: "10pt", lineHeight: 1.4, color: "#1a1a1a" }}>
+      {/* Title Block */}
+      {parsed.title && (
+        <div style={{ textAlign: "center", marginBottom: "16px" }}>
+          <h1 style={{ fontSize: "17px", fontWeight: 700, lineHeight: 1.2, marginBottom: "10px" }}>
+            {parsed.title}
+          </h1>
+          {parsed.authors.length > 0 && (
+            <div style={{ display: "flex", justifyContent: "center", gap: "32px", flexWrap: "wrap" }}>
+              {parsed.authors.map((author, i) => (
+                <div key={i} style={{ textAlign: "center", fontSize: "9px" }}>
+                  <p style={{ fontWeight: 600, marginBottom: "2px" }}>{author.name}</p>
+                  {author.affiliation && (
+                    <p style={{ color: "#555", whiteSpace: "pre-line" }}>
+                      {author.affiliation}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Abstract */}
+      {parsed.abstract && (
+        <div style={{ marginBottom: "14px", fontSize: "9px", textAlign: "justify" }}>
+          <span style={{ fontWeight: 700, fontStyle: "italic" }}>Abstract&mdash;</span>
+          <span>{parsed.abstract}</span>
+        </div>
+      )}
+
+      {/* Keywords */}
+      {parsed.keywords && (
+        <div style={{ marginBottom: "14px", fontSize: "9px" }}>
+          <span style={{ fontWeight: 700, fontStyle: "italic" }}>Index Terms&mdash;</span>
+          <span style={{ fontStyle: "italic" }}>{parsed.keywords}</span>
+        </div>
+      )}
+
+      {/* Body - two-column for IEEE, single column for others */}
+      <div
+        style={{
+          columnCount: isIEEE ? 2 : 1,
+          columnGap: "20px",
+          fontSize: "9px",
+          lineHeight: 1.5,
+          textAlign: "justify",
+        }}
+      >
+        {parsed.sections.map((section, i) => (
+          <div key={i} style={{ breakInside: "avoid-column", marginBottom: "12px" }}>
+            <h2
+              style={{
+                fontSize: isIEEE ? "10px" : "11px",
+                fontWeight: 700,
+                textAlign: "center",
+                marginBottom: "6px",
+                textTransform: "uppercase",
+                letterSpacing: "0.3px",
+              }}
+            >
+              {isIEEE ? `${toRoman(i + 1)}. ` : ""}
+              {section.heading}
+            </h2>
+            {section.subsections.map((sub, si) => (
+              <div key={si} style={{ marginBottom: "8px" }}>
+                {sub.heading && (
+                  <h3
+                    style={{
+                      fontSize: "9px",
+                      fontWeight: 700,
+                      fontStyle: "italic",
+                      marginBottom: "3px",
+                    }}
+                  >
+                    {isIEEE ? `${String.fromCharCode(65 + si)}. ` : ""}
+                    {sub.heading}
+                  </h3>
+                )}
+                {sub.paragraphs.map((para, pi) => (
+                  <p key={pi} style={{ textIndent: "1.5em", marginBottom: "4px" }}>
+                    {para}
+                  </p>
+                ))}
+              </div>
+            ))}
+            {section.paragraphs.map((para, pi) => (
+              <p key={pi} style={{ textIndent: "1.5em", marginBottom: "4px" }}>
+                {para}
+              </p>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* References */}
+      {parsed.references.length > 0 && (
+        <div style={{ marginTop: "16px", fontSize: "8px", lineHeight: 1.4 }}>
+          <h2
+            style={{
+              fontSize: "10px",
+              fontWeight: 700,
+              textAlign: "center",
+              marginBottom: "6px",
+              textTransform: "uppercase",
+            }}
+          >
+            References
+          </h2>
+          {parsed.references.map((ref, i) => (
+            <p key={i} style={{ marginBottom: "2px", paddingLeft: "1.5em", textIndent: "-1.5em" }}>
+              [{i + 1}] {ref}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Fallback for unparseable content */}
+      {parsed.rawFallback && parsed.sections.length === 0 && (
+        <pre style={{ fontSize: "9px", whiteSpace: "pre-wrap", fontFamily: "inherit", lineHeight: 1.5 }}>
+          {parsed.rawFallback}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/* ─── TeX Parser ─── */
+
+interface SubSection {
+  heading: string;
+  paragraphs: string[];
+}
+
+interface Section {
+  heading: string;
+  paragraphs: string[];
+  subsections: SubSection[];
+}
+
+interface ParsedTeX {
+  title: string;
+  authors: { name: string; affiliation: string }[];
+  abstract: string;
+  keywords: string;
+  sections: Section[];
+  references: string[];
+  rawFallback: string;
+}
+
+function parseTeXForPreview(tex: string): ParsedTeX {
+  const result: ParsedTeX = {
+    title: "",
+    authors: [],
+    abstract: "",
+    keywords: "",
+    sections: [],
+    references: [],
+    rawFallback: "",
+  };
+
+  try {
+    // Title
+    const titleMatch = tex.match(/\\title\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/);
+    if (titleMatch) result.title = cleanTeX(titleMatch[1]);
+
+    // Authors - multiple patterns
+    const ieeeAuthorRe = /\\IEEEauthorblockN\{([^}]*)\}/g;
+    const ieeeAffRe = /\\IEEEauthorblockA\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/g;
+    let m;
+    const names: string[] = [];
+    const affs: string[] = [];
+    while ((m = ieeeAuthorRe.exec(tex)) !== null) names.push(cleanTeX(m[1]));
+    while ((m = ieeeAffRe.exec(tex)) !== null) affs.push(cleanTeX(m[1]));
+
+    if (names.length > 0) {
+      for (let i = 0; i < names.length; i++) {
+        result.authors.push({ name: names[i], affiliation: affs[i] || "" });
+      }
+    } else {
+      const authorMatch = tex.match(/\\author\{([^}]*(?:\{[^}]*\}[^}]*)*)\}/);
+      if (authorMatch) {
+        const authorText = cleanTeX(authorMatch[1]);
+        if (authorText) {
+          result.authors.push({ name: authorText, affiliation: "" });
+        }
+      }
+    }
+
+    // Abstract
+    const abstractMatch = tex.match(/\\begin\{abstract\}([\s\S]*?)\\end\{abstract\}/);
+    if (abstractMatch) result.abstract = cleanTeX(abstractMatch[1]);
+
+    // Keywords
+    const kwMatch = tex.match(/\\begin\{IEEEkeywords\}([\s\S]*?)\\end\{IEEEkeywords\}/);
+    if (kwMatch) result.keywords = cleanTeX(kwMatch[1]);
+    if (!result.keywords) {
+      const kwMatch2 = tex.match(/\\keywords\{([^}]*)\}/);
+      if (kwMatch2) result.keywords = cleanTeX(kwMatch2[1]);
+    }
+
+    // Sections and subsections
+    const sectionRe = /\\section\{([^}]*)\}/g;
+    const sectionPositions: { heading: string; start: number; matchLen: number }[] = [];
+    while ((m = sectionRe.exec(tex)) !== null) {
+      sectionPositions.push({
+        heading: cleanTeX(m[1]),
+        start: m.index + m[0].length,
+        matchLen: m[0].length,
+      });
+    }
+
+    for (let i = 0; i < sectionPositions.length; i++) {
+      const start = sectionPositions[i].start;
+      const nextSecStart = i + 1 < sectionPositions.length
+        ? sectionPositions[i + 1].start - sectionPositions[i + 1].matchLen
+        : tex.indexOf("\\end{document}", start);
+      const end = nextSecStart > start ? nextSecStart : tex.length;
+      const sectionContent = tex.slice(start, end);
+
+      const subsectionRe = /\\subsection\{([^}]*)\}/g;
+      const subPositions: { heading: string; start: number; len: number }[] = [];
+      let sm;
+      while ((sm = subsectionRe.exec(sectionContent)) !== null) {
+        subPositions.push({ heading: cleanTeX(sm[1]), start: sm.index + sm[0].length, len: sm[0].length });
+      }
+
+      const section: Section = {
+        heading: sectionPositions[i].heading,
+        paragraphs: [],
+        subsections: [],
+      };
+
+      if (subPositions.length > 0) {
+        const beforeSubs = sectionContent.slice(0, subPositions[0].start - subPositions[0].len);
+        section.paragraphs = splitParagraphs(beforeSubs);
+
+        for (let si = 0; si < subPositions.length; si++) {
+          const subStart = subPositions[si].start;
+          const subEnd = si + 1 < subPositions.length
+            ? subPositions[si + 1].start - subPositions[si + 1].len
+            : sectionContent.length;
+          const subContent = sectionContent.slice(subStart, subEnd);
+          section.subsections.push({
+            heading: subPositions[si].heading,
+            paragraphs: splitParagraphs(subContent),
+          });
+        }
+      } else {
+        section.paragraphs = splitParagraphs(sectionContent);
+      }
+
+      result.sections.push(section);
+    }
+
+    // References via bibitem
+    const bibRe = /\\bibitem\{[^}]*\}\s*([\s\S]*?)(?=\\bibitem|\\end\{thebibliography\})/g;
+    while ((m = bibRe.exec(tex)) !== null) {
+      const ref = cleanTeX(m[1]);
+      if (ref) result.references.push(ref);
+    }
+
+    // Fallback
+    if (!result.title && result.sections.length === 0) {
+      const bodyMatch = tex.match(/\\begin\{document\}([\s\S]*?)\\end\{document\}/);
+      result.rawFallback = bodyMatch ? cleanTeX(bodyMatch[1]) : cleanTeX(tex);
+    }
+  } catch {
+    result.rawFallback = tex;
+  }
+
+  return result;
+}
+
+function splitParagraphs(text: string): string[] {
+  return text
+    .split(/\n\s*\n/)
+    .map((p) => cleanTeX(p))
+    .filter((p) => p.length > 3);
+}
+
+function cleanTeX(input: string): string {
+  return input
+    .replace(/\\\\(?:\s*\n|\s)/g, " ")
+    .replace(/\\textbf\{([^}]*)\}/g, "$1")
+    .replace(/\\textit\{([^}]*)\}/g, "$1")
+    .replace(/\\emph\{([^}]*)\}/g, "$1")
+    .replace(/\\underline\{([^}]*)\}/g, "$1")
+    .replace(/\\cite\{([^}]*)\}/g, "[$1]")
+    .replace(/\\label\{[^}]*\}/g, "")
+    .replace(/\\ref\{[^}]*\}/g, "[ref]")
+    .replace(/\\url\{([^}]*)\}/g, "$1")
+    .replace(/\\href\{[^}]*\}\{([^}]*)\}/g, "$1")
+    .replace(/\\begin\{(?:itemize|enumerate)\}/g, "")
+    .replace(/\\end\{(?:itemize|enumerate)\}/g, "")
+    .replace(/\\item\s*/g, "- ")
+    .replace(/\\begin\{(?:equation|align|gather|multline)\*?\}[\s\S]*?\\end\{(?:equation|align|gather|multline)\*?\}/g, "[equation]")
+    .replace(/\\begin\{(?:table|figure)\*?\}[\s\S]*?\\end\{(?:table|figure)\*?\}/g, "")
+    .replace(/\$([^$]+)\$/g, "$1")
+    .replace(/\\(?:section|subsection|subsubsection|paragraph)\{[^}]*\}/g, "")
+    .replace(/\\(?:maketitle|newpage|clearpage|pagebreak|noindent|centering|raggedright|raggedleft)/g, "")
+    .replace(/\\(?:vspace|hspace|vskip|hskip|smallskip|medskip|bigskip)\{?[^}]*\}?/g, "")
+    .replace(/\\(?:footnote)\{([^}]*)\}/g, "")
+    .replace(/\\[a-zA-Z]+\{([^}]*)\}/g, "$1")
+    .replace(/\\[a-zA-Z]+/g, " ")
+    .replace(/[{}]/g, "")
+    .replace(/~+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function toRoman(num: number): string {
+  const vals = [10, 9, 5, 4, 1];
+  const syms = ["X", "IX", "V", "IV", "I"];
+  let result = "";
+  for (let i = 0; i < vals.length; i++) {
+    while (num >= vals[i]) {
+      result += syms[i];
+      num -= vals[i];
+    }
+  }
+  return result;
+}
+
+/* ─── Printable HTML for PDF Download ─── */
+
+function buildPrintableHTML(parsed: ParsedTeX, formatName: string): string {
+  const isIEEE = formatName === "IEEE";
+
+  const authorHTML = parsed.authors
+    .map(
+      (a) =>
+        `<div style="text-align:center;font-size:9px"><p style="font-weight:600;margin:0">${a.name}</p>${a.affiliation ? `<p style="color:#555;margin:2px 0 0 0;white-space:pre-line">${a.affiliation}</p>` : ""}</div>`
+    )
+    .join("");
+
+  const sectionsHTML = parsed.sections
+    .map((sec, i) => {
+      const heading = isIEEE ? `${toRoman(i + 1)}. ${sec.heading}` : sec.heading;
+      const subsHTML = sec.subsections
+        .map(
+          (sub, si) =>
+            `<div style="margin-bottom:8px">${sub.heading ? `<h3 style="font-size:9px;font-weight:700;font-style:italic;margin:0 0 3px 0">${isIEEE ? `${String.fromCharCode(65 + si)}. ` : ""}${sub.heading}</h3>` : ""}${sub.paragraphs.map((p) => `<p style="text-indent:1.5em;margin:0 0 4px 0;text-align:justify">${p}</p>`).join("")}</div>`
+        )
+        .join("");
+      const parasHTML = sec.paragraphs
+        .map((p) => `<p style="text-indent:1.5em;margin:0 0 4px 0;text-align:justify">${p}</p>`)
+        .join("");
+      return `<div style="break-inside:avoid-column;margin-bottom:12px"><h2 style="font-size:${isIEEE ? "10px" : "11px"};font-weight:700;text-align:center;margin:0 0 6px 0;text-transform:uppercase;letter-spacing:0.3px">${heading}</h2>${parasHTML}${subsHTML}</div>`;
+    })
+    .join("");
+
+  const refsHTML =
+    parsed.references.length > 0
+      ? `<div style="margin-top:16px;font-size:8px;line-height:1.4"><h2 style="font-size:10px;font-weight:700;text-align:center;margin:0 0 6px 0;text-transform:uppercase">References</h2>${parsed.references.map((r, i) => `<p style="margin:0 0 2px 0;padding-left:1.5em;text-indent:-1.5em">[${i + 1}] ${r}</p>`).join("")}</div>`
+      : "";
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>${parsed.title || "Paper"}</title>
+<style>
+  @page { size: letter; margin: 0.75in 0.85in; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  body { font-family: 'Times New Roman', Georgia, serif; font-size: 10pt; line-height: 1.4; color: #1a1a1a; margin: 0; padding: 0.75in 0.85in; }
+</style>
+</head>
+<body>
+${parsed.title ? `<div style="text-align:center;margin-bottom:16px"><h1 style="font-size:17px;font-weight:700;line-height:1.2;margin:0 0 10px 0">${parsed.title}</h1>${authorHTML ? `<div style="display:flex;justify-content:center;gap:32px;flex-wrap:wrap">${authorHTML}</div>` : ""}</div>` : ""}
+${parsed.abstract ? `<div style="margin-bottom:14px;font-size:9px;text-align:justify"><span style="font-weight:700;font-style:italic">Abstract&mdash;</span>${parsed.abstract}</div>` : ""}
+${parsed.keywords ? `<div style="margin-bottom:14px;font-size:9px"><span style="font-weight:700;font-style:italic">Index Terms&mdash;</span><span style="font-style:italic">${parsed.keywords}</span></div>` : ""}
+<div style="column-count:${isIEEE ? 2 : 1};column-gap:20px;font-size:9px;line-height:1.5;text-align:justify">${sectionsHTML}</div>
+${refsHTML}
+${parsed.rawFallback && parsed.sections.length === 0 ? `<pre style="font-size:9px;white-space:pre-wrap;font-family:inherit;line-height:1.5">${parsed.rawFallback}</pre>` : ""}
+</body>
+</html>`;
 }

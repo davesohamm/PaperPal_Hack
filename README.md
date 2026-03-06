@@ -1,1 +1,0 @@
-This Project is made for HackaMINEd hackathon at Nirma University, under the PaperPal track.
