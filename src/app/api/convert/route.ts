@@ -156,6 +156,7 @@ export async function POST(req: NextRequest) {
           tokenStatus: pool.getStatus(),
         });
 
+        controller.enqueue(encoder.encode("\n"));
         controller.close();
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";

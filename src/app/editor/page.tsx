@@ -130,22 +130,34 @@ export default function EditorPage() {
       const decoder = new TextDecoder();
       let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
+      const processLines = (text: string) => {
         let currentEvent = "";
-        for (const line of lines) {
+        for (const line of text.split("\n")) {
           if (line.startsWith("event: ")) {
             currentEvent = line.slice(7).trim();
           } else if (line.startsWith("data: ")) {
-            const data = JSON.parse(line.slice(6));
-            handleSSEEvent(currentEvent, data);
+            try {
+              const data = JSON.parse(line.slice(6));
+              handleSSEEvent(currentEvent, data);
+            } catch {
+              // ignore malformed JSON
+            }
           }
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (buffer.trim()) processLines(buffer);
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lastDoubleNewline = buffer.lastIndexOf("\n\n");
+        if (lastDoubleNewline !== -1) {
+          processLines(buffer.slice(0, lastDoubleNewline));
+          buffer = buffer.slice(lastDoubleNewline + 2);
         }
       }
     } catch (err) {
