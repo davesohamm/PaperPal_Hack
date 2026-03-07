@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import { FORMAT_OPTIONS } from "@/lib/constants";
+import { useAuth } from "@/context/AuthContext";
 
 interface ConversionStatus {
   message: string;
@@ -70,19 +71,16 @@ export default function EditorPage() {
   const [activeModel, setActiveModel] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const { isLoggedIn, signin, signup } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authFirstName, setAuthFirstName] = useState("");
+  const [authLastName, setAuthLastName] = useState("");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
-
-  useEffect(() => {
-    const saved = sessionStorage.getItem("paperpal_auth");
-    if (saved) setIsLoggedIn(true);
-  }, []);
 
   useEffect(() => {
     const raw = sessionStorage.getItem("paperpal_parsed");
@@ -222,28 +220,30 @@ export default function EditorPage() {
     setAuthError(null);
     setAuthLoading(true);
 
-    try {
-      const res = await fetch("/api/auth", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: authEmail, password: authPassword }),
-      });
-      const data = await res.json();
+    let result: { success: boolean; error?: string };
 
-      if (data.success) {
-        sessionStorage.setItem("paperpal_auth", JSON.stringify(data.user));
-        setIsLoggedIn(true);
-        setShowAuthModal(false);
-        setAuthEmail("");
-        setAuthPassword("");
-        downloadPDF();
-      } else {
-        setAuthError(data.error || "Invalid credentials");
+    if (authMode === "signup") {
+      if (!authFirstName || !authLastName) {
+        setAuthError("First name and last name are required");
+        setAuthLoading(false);
+        return;
       }
-    } catch {
-      setAuthError("Connection failed. Please try again.");
-    } finally {
-      setAuthLoading(false);
+      result = await signup(authFirstName, authLastName, authEmail, authPassword);
+    } else {
+      result = await signin(authEmail, authPassword);
+    }
+
+    setAuthLoading(false);
+
+    if (result.success) {
+      setShowAuthModal(false);
+      setAuthEmail("");
+      setAuthPassword("");
+      setAuthFirstName("");
+      setAuthLastName("");
+      downloadPDF();
+    } else {
+      setAuthError(result.error || "Something went wrong");
     }
   };
 
@@ -603,6 +603,24 @@ export default function EditorPage() {
               </div>
 
               <form onSubmit={handleAuth} className="space-y-3">
+                {authMode === "signup" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={authFirstName}
+                      onChange={(e) => setAuthFirstName(e.target.value)}
+                      placeholder="First name"
+                      className="w-full rounded-xl border border-paper-200 bg-white py-3 pl-4 pr-4 text-sm text-ink-800 placeholder:text-ink-300 outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10"
+                    />
+                    <input
+                      type="text"
+                      value={authLastName}
+                      onChange={(e) => setAuthLastName(e.target.value)}
+                      placeholder="Last name"
+                      className="w-full rounded-xl border border-paper-200 bg-white py-3 pl-4 pr-4 text-sm text-ink-800 placeholder:text-ink-300 outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10"
+                    />
+                  </div>
+                )}
                 <div className="relative">
                   <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-300" />
                   <input
@@ -622,6 +640,7 @@ export default function EditorPage() {
                     onChange={(e) => setAuthPassword(e.target.value)}
                     placeholder="Password"
                     required
+                    minLength={6}
                     className="w-full rounded-xl border border-paper-200 bg-white py-3 pl-10 pr-10 text-sm text-ink-800 placeholder:text-ink-300 outline-none focus:border-accent/40 focus:ring-2 focus:ring-accent/10"
                   />
                   <button

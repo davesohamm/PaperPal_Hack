@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText,
@@ -9,11 +10,17 @@ import {
   X,
   ArrowRight,
   Sparkles,
+  LogOut,
+  User,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Navbar() {
+  const router = useRouter();
+  const { user, isLoggedIn, logout, loading } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -26,6 +33,16 @@ export default function Navbar() {
     { href: "/upload", label: "Convert" },
     { href: "/editor", label: "Editor" },
   ];
+
+  const handleLogout = async () => {
+    await logout();
+    setShowUserMenu(false);
+    router.push("/");
+  };
+
+  const initials = user
+    ? `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase()
+    : "";
 
   return (
     <>
@@ -65,20 +82,82 @@ export default function Navbar() {
             </div>
 
             <div className="hidden md:flex items-center gap-3">
-              <Link
-                href="/auth"
-                className="text-sm font-medium text-ink-500 hover:text-ink-800 transition-colors px-4 py-2"
-              >
-                Sign in
-              </Link>
-              <Link
-                href="/upload"
-                className="group flex items-center gap-2 rounded-full bg-ink-900 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-ink-800 hover:shadow-lg hover:shadow-ink-900/20 active:scale-[0.97]"
-              >
-                <Sparkles className="h-3.5 w-3.5" />
-                Start Converting
-                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-              </Link>
+              {!loading && isLoggedIn && user ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setShowUserMenu(!showUserMenu)}
+                    className="flex items-center gap-2.5 rounded-full border border-paper-200 bg-white/80 pl-1.5 pr-4 py-1.5 text-sm font-medium text-ink-700 hover:bg-white hover:border-paper-300 hover:shadow-sm transition-all"
+                  >
+                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-ink-900 text-white text-xs font-bold">
+                      {initials}
+                    </div>
+                    <span className="max-w-[120px] truncate">
+                      {user.firstName}
+                    </span>
+                  </button>
+
+                  <AnimatePresence>
+                    {showUserMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setShowUserMenu(false)}
+                        />
+                        <motion.div
+                          initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                          transition={{ duration: 0.15 }}
+                          className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white border border-paper-200 shadow-xl z-50 overflow-hidden"
+                        >
+                          <div className="px-4 py-3 border-b border-paper-100">
+                            <p className="text-sm font-medium text-ink-800 truncate">
+                              {user.firstName} {user.lastName}
+                            </p>
+                            <p className="text-xs text-ink-400 truncate">
+                              {user.email}
+                            </p>
+                          </div>
+                          <div className="p-1.5">
+                            <Link
+                              href="/upload"
+                              onClick={() => setShowUserMenu(false)}
+                              className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-ink-600 hover:bg-paper-50 hover:text-ink-800 transition-colors"
+                            >
+                              <Sparkles className="h-4 w-4" />
+                              Convert Paper
+                            </Link>
+                            <button
+                              onClick={handleLogout}
+                              className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                              <LogOut className="h-4 w-4" />
+                              Sign Out
+                            </button>
+                          </div>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
+              ) : !loading ? (
+                <>
+                  <Link
+                    href="/auth"
+                    className="text-sm font-medium text-ink-500 hover:text-ink-800 transition-colors px-4 py-2"
+                  >
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/upload"
+                    className="group flex items-center gap-2 rounded-full bg-ink-900 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-ink-800 hover:shadow-lg hover:shadow-ink-900/20 active:scale-[0.97]"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    Start Converting
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                </>
+              ) : null}
             </div>
 
             <button
@@ -114,15 +193,50 @@ export default function Navbar() {
                   {link.label}
                 </Link>
               ))}
-              <div className="pt-3 border-t border-ink-100 mt-3">
-                <Link
-                  href="/upload"
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center justify-center gap-2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-white"
-                >
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Start Converting
-                </Link>
+              <div className="pt-3 border-t border-ink-100 mt-3 space-y-2">
+                {isLoggedIn && user ? (
+                  <>
+                    <div className="flex items-center gap-3 px-4 py-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-ink-900 text-white text-xs font-bold">
+                        {initials}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-ink-800">
+                          {user.firstName} {user.lastName}
+                        </p>
+                        <p className="text-xs text-ink-400">{user.email}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        handleLogout();
+                        setMobileOpen(false);
+                      }}
+                      className="w-full flex items-center justify-center gap-2 rounded-full border border-red-200 px-5 py-3 text-sm font-medium text-red-600 hover:bg-red-50"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      Sign Out
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href="/auth"
+                      onClick={() => setMobileOpen(false)}
+                      className="block px-4 py-3 rounded-xl text-sm font-medium text-ink-600 hover:bg-ink-50 hover:text-ink-900 transition-colors text-center"
+                    >
+                      Sign In
+                    </Link>
+                    <Link
+                      href="/upload"
+                      onClick={() => setMobileOpen(false)}
+                      className="flex items-center justify-center gap-2 rounded-full bg-ink-900 px-5 py-3 text-sm font-medium text-white"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Start Converting
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </motion.div>
