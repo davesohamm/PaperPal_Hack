@@ -25,12 +25,6 @@ class TokenPool {
       process.env.HF_TOKEN_5,
     ].filter((t): t is string => !!t && t.startsWith("hf_"));
 
-    if (envTokens.length === 0) {
-      throw new Error(
-        "No HuggingFace tokens configured. Set HF_TOKEN_1..HF_TOKEN_5 in .env.local"
-      );
-    }
-
     this.tokens = envTokens.map((token) => ({
       token,
       errorCount: 0,
@@ -81,6 +75,12 @@ class TokenPool {
     const models = preferredModel
       ? [preferredModel, ...MODEL_TIERS.filter((m) => m.id !== preferredModel.id)]
       : MODEL_TIERS;
+
+    if (this.tokens.length === 0) {
+      throw new Error(
+        "No HuggingFace tokens configured. Set HF_TOKEN_1..HF_TOKEN_5 in .env.local"
+      );
+    }
 
     let lastError: Error | null = null;
 
