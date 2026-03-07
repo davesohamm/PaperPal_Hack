@@ -4,8 +4,12 @@
 
 Upload a `.docx`, `.txt`, or `.tex` file, pick a citation style, and get a publication-ready LaTeX PDF in under a minute. No manual formatting. No copy-pasting into Overleaf. No fighting with margins at 3 AM.
 
+<<<<<<< Updated upstream
 ![PaperPal Hero](./docs/screenshots/hero.png)
 <!-- Replace with an actual screenshot of the landing page -->
+=======
+![PaperPal Hero](./images/hero.png)
+>>>>>>> Stashed changes
 
 ---
 
@@ -39,6 +43,7 @@ PaperPal fixes this. Drop in your document, select a format, and the system prod
 
 ## Demo
 
+<<<<<<< Updated upstream
 | Landing Page | Format Selection | Upload & Parse |
 |:---:|:---:|:---:|
 | ![Landing](./docs/screenshots/landing.png) | ![Formats](./docs/screenshots/formats.png) | ![Upload](./docs/screenshots/upload.png) |
@@ -48,6 +53,19 @@ PaperPal fixes this. Drop in your document, select a format, and the system prod
 | ![Converting](./docs/screenshots/converting.png) | ![Editor](./docs/screenshots/editor.png) | ![PDF](./docs/screenshots/pdf-output.png) |
 
 <!-- Replace all placeholder paths above with real screenshots -->
+=======
+| Landing Page | Format Selection |
+|:---:|:---:|
+| ![Landing](./images/hero.png) | ![Formats](./images/formats.png) |
+
+| Upload & Parse | Editor + Preview |
+|:---:|:---:|
+| ![Upload](./images/upload_paper.png) | ![Editor](./images/split_Screen.png) |
+
+| PDF Download |
+|:---:|
+| ![PDF](./images/download_pdf.png) |
+>>>>>>> Stashed changes
 
 ---
 
